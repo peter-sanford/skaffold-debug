@@ -24,3 +24,7 @@ fs/assets/check.txt
 secrets/keys.json
 integration/testdata/dev/foo
 pkg/skaffold/build/app.tar
+
+# CACHEDEBUG: shouldn't normally appear under the repo (defaults to ~/.skaffold/cache-deps),
+# but guard against SKAFFOLD_CACHE_DEBUG_DIR or a `go test` run writing one here anyway.
+cache-deps/

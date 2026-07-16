@@ -26,6 +26,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/build/buildpacks"
 	"github.com/GoogleContainerTools/skaffold/v2/pkg/skaffold/build/kaniko"
@@ -104,6 +105,9 @@ func (h *artifactHasherImpl) safeHash(ctx context.Context, out io.Writer, a *lat
 // singleArtifactHash calculates the hash for a single artifact, and ignores its required artifacts.
 func singleArtifactHash(ctx context.Context, out io.Writer, depLister DependencyLister, a *latest.Artifact, mode config.RunMode, m platform.Matcher, tag string) (string, error) {
 	var inputs []string
+	// snapshot of every hash input for this artifact, keyed by file path (or a metaKeyPrefix'd
+	// pseudo-key for config/buildArgs/platforms), so dumpCacheDeps can diff it against last run.
+	depSnapshot := make(map[string]string)
 
 	// Append the artifact's configuration
 	config, err := artifactConfigFunc(a)
@@ -111,6 +115,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 		return "", fmt.Errorf("getting artifact's configuration for %q: %w", a.ImageName, err)
 	}
 	inputs = append(inputs, config)
+	depSnapshot[metaKeyPrefix+"config"] = config
 
 	// Append the digest of each input file
 	deps, err := depLister(ctx, a, tag)
@@ -130,6 +135,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 			return "", fmt.Errorf("getting hash for %q: %w", d, err)
 		}
 		inputs = append(inputs, h)
+		depSnapshot[d] = h
 		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s dep %s -> %s\n", a.ImageName, d, h)
 	}
 
@@ -140,6 +146,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 	}
 	if args != nil {
 		inputs = append(inputs, args...)
+		depSnapshot[metaKeyPrefix+"buildArgs"] = strings.Join(args, ",")
 		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s buildArgs -> %v\n", a.ImageName, args)
 	}
 
@@ -150,11 +157,13 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 	}
 	sort.Strings(ps)
 	inputs = append(inputs, ps...)
+	depSnapshot[metaKeyPrefix+"platforms"] = strings.Join(ps, ",")
 	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s config -> %s\n", a.ImageName, config)
 	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s platforms -> %v\n", a.ImageName, ps)
 
 	finalHash, err := encode(inputs)
 	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s finalHash -> %s\n", a.ImageName, finalHash)
+	dumpCacheDeps(a.ImageName, depSnapshot)
 	return finalHash, err
 }
 
