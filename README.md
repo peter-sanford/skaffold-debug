@@ -25,7 +25,8 @@ This repo is a personal fork of [GoogleContainerTools/skaffold](https://github.c
   1. `pkg/skaffold/build/cache/hash.go` gains `CACHEDEBUG` logging (written to **stderr**) for every input
      that feeds an artifact's build-cache hash — per-dependency file hashes, build args, artifact config,
      resolved platforms, and the final combined hash. Useful for diagnosing why `skaffold build`/`dev`
-     decides an artifact's cache is a hit or a miss.
+     decides an artifact's cache is a hit or a miss. **Off by default** (one line per dependency file
+     per artifact per build is a lot of noise) — set `SKAFFOLD_CACHEDEBUG=1` to turn it on.
   2. `pkg/skaffold/build/cache/cachedebug.go` snapshots those same inputs to
      `~/.skaffold/cache-deps/<artifact>.txt` on every run (tab-separated `key\tvalue` lines, one per
      dependency file plus a few `!meta! ...`-prefixed entries for config/build args/platforms), diffs the
@@ -36,10 +37,12 @@ This repo is a personal fork of [GoogleContainerTools/skaffold](https://github.c
      ```
      Capped at 6 named entries (`+ N more` beyond that). Silent when nothing changed (normal cache
      hits stay quiet), and printed on stdout specifically so it's visible even with stderr
-     redirected to `/dev/null`. Override the snapshot directory with `SKAFFOLD_CACHE_DEBUG_DIR` —
-     the default is deliberately *not* relative to the working directory, since most artifacts'
-     `dependencies.paths` include `.` or the project root, and a snapshot file living inside that
-     tree would count itself as a changed dependency on every subsequent run.
+     redirected to `/dev/null`. **Always on**, unlike the raw `CACHEDEBUG` lines above — this is
+     what makes a plain build actionable without turning on verbose logging first. Override the
+     snapshot directory with `SKAFFOLD_CACHE_DEBUG_DIR` — the default is deliberately *not*
+     relative to the working directory, since most artifacts' `dependencies.paths` include `.` or
+     the project root, and a snapshot file living inside that tree would count itself as a
+     changed dependency on every subsequent run.
 
 ### Pulling in upstream changes
 
