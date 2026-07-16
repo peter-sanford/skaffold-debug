@@ -130,6 +130,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 			return "", fmt.Errorf("getting hash for %q: %w", d, err)
 		}
 		inputs = append(inputs, h)
+		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s dep %s -> %s\n", a.ImageName, d, h)
 	}
 
 	// add build args for the artifact if specified
@@ -139,6 +140,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 	}
 	if args != nil {
 		inputs = append(inputs, args...)
+		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s buildArgs -> %v\n", a.ImageName, args)
 	}
 
 	// add build platforms
@@ -148,8 +150,12 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 	}
 	sort.Strings(ps)
 	inputs = append(inputs, ps...)
+	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s config -> %s\n", a.ImageName, config)
+	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s platforms -> %v\n", a.ImageName, ps)
 
-	return encode(inputs)
+	finalHash, err := encode(inputs)
+	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s finalHash -> %s\n", a.ImageName, finalHash)
+	return finalHash, err
 }
 
 func encode(inputs []string) (string, error) {

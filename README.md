@@ -15,6 +15,44 @@ provides building blocks and describe customizations for a CI/CD pipeline.
 
 ---------------------
 
+## `cachedebug` branch: cache-debug fork
+
+This repo is a personal fork of [GoogleContainerTools/skaffold](https://github.com/GoogleContainerTools/skaffold).
+
+- `main` tracks upstream `main` as a clean mirror (no local changes) — it's rebased/fast-forwarded from
+  `upstream/main` periodically and never carries the patch directly.
+- `cachedebug` is rebased on top of `main` and adds one patch: `pkg/skaffold/build/cache/hash.go` gains
+  `CACHEDEBUG` logging (written to **stderr**) for every input that feeds an artifact's build-cache hash —
+  per-dependency file hashes, build args, artifact config, resolved platforms, and the final combined hash.
+  Useful for diagnosing why `skaffold build`/`dev` decides an artifact's cache is a hit or a miss.
+
+### Pulling in upstream changes
+
+```sh
+git fetch upstream
+git checkout main
+git merge --ff-only upstream/main   # main should always fast-forward cleanly
+git checkout cachedebug
+git rebase main
+```
+
+### Building the debug binary
+
+```sh
+git checkout cachedebug
+make out/skaffold
+cp out/skaffold ~/Documents/skaffold-cache-debug
+```
+
+`out/skaffold` is the plain dev build target (see `Makefile`) — no cross-compilation, just your host's
+`GOOS`/`GOARCH`. The `CACHEDEBUG` lines print to stderr, so capture both streams when redirecting output:
+
+```sh
+skaffold-cache-debug build -f skaffold.yaml > output.txt 2>&1
+```
+
+---------------------
+
 ## [Install Skaffold](https://skaffold.dev/docs/install/)
 
 Or, check out our [Github Releases](https://github.com/GoogleContainerTools/skaffold/releases) page for release info or to install a specific version.
