@@ -30,16 +30,21 @@ This repo is a personal fork of [GoogleContainerTools/skaffold](https://github.c
   2. `pkg/skaffold/build/cache/cachedebug.go` snapshots those same inputs to
      `~/.skaffold/cache-deps/<artifact>.txt` on every run (tab-separated `key\tvalue` lines, one per
      dependency file plus a few `!meta! ...`-prefixed entries for config/build args/platforms), diffs the
-     snapshot against the previous run, and — if anything differs — annotates the normal
-     `Not found. Building` line **on stdout** with which file(s) changed/were added/were removed:
+     snapshot against the previous run, and — if anything differs — follows the normal
+     `Not found. Building` line **on stdout** with every file that changed/was added/was removed
+     (`~`/`+`/`-` respectively), one per line, no truncation:
      ```
-      - portal: Not found. Building (changes: ~app.py, +new-file.txt, -old-config.ini)
+      - portal: Not found. Building
+         changes:
+           ~ app.py
+           + new-file.txt
+           - old-config.ini
      ```
-     Capped at 6 named entries (`+ N more` beyond that). Silent when nothing changed (normal cache
-     hits stay quiet), and printed on stdout specifically so it's visible even with stderr
-     redirected to `/dev/null`. **Always on**, unlike the raw `CACHEDEBUG` lines above — this is
-     what makes a plain build actionable without turning on verbose logging first. Override the
-     snapshot directory with `SKAFFOLD_CACHE_DEBUG_DIR` — the default is deliberately *not*
+     Silent when nothing changed (normal cache hits stay quiet), and printed on stdout
+     specifically so it's visible even with stderr redirected to `/dev/null`. **Always on**,
+     unlike the raw `CACHEDEBUG` lines above — this is what makes a plain build actionable
+     without turning on verbose logging first. Override the snapshot directory with
+     `SKAFFOLD_CACHE_DEBUG_DIR` — the default is deliberately *not*
      relative to the working directory, since most artifacts' `dependencies.paths` include `.` or
      the project root, and a snapshot file living inside that tree would count itself as a
      changed dependency on every subsequent run.
