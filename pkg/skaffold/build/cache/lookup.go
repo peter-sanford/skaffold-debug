@@ -68,6 +68,9 @@ func (c *cache) lookup(ctx context.Context, out io.Writer, a *latest.Artifact, t
 	if err != nil {
 		return failed{err: fmt.Errorf("getting hash for artifact %q: %s", a.ImageName, err)}
 	}
+	// CACHEDEBUG: grabbed once per lookup and threaded into any needsBuilding result below, so
+	// "Not found. Building" can be annotated with which cache-hash input(s) changed.
+	changeSummary := takeCacheDepsChangeSummary(a.ImageName)
 
 	c.cacheMutex.RLock()
 	entry, cacheHit := c.artifactCache[hash]
@@ -83,21 +86,21 @@ func (c *cache) lookup(ctx context.Context, out io.Writer, a *latest.Artifact, t
 		}
 		if entry, err = c.tryImport(ctx, a, tag, hash, pl); err != nil {
 			log.Entry(ctx).Debugf("Could not import artifact from Docker, building instead (%s)", err)
-			return needsBuilding{hash: hash}
+			return needsBuilding{hash: hash, changeSummary: changeSummary}
 		}
 	}
 
 	if isLocal, err := c.isLocalImage(a.ImageName); err != nil {
 		return failed{err}
 	} else if isLocal {
-		return c.lookupLocal(ctx, hash, tag, entry)
+		return c.lookupLocal(ctx, hash, tag, entry, changeSummary)
 	}
-	return c.lookupRemote(ctx, hash, tag, pls.Platforms, entry)
+	return c.lookupRemote(ctx, hash, tag, pls.Platforms, entry, changeSummary)
 }
 
-func (c *cache) lookupLocal(ctx context.Context, hash, tag string, entry ImageDetails) cacheDetails {
+func (c *cache) lookupLocal(ctx context.Context, hash, tag string, entry ImageDetails, changeSummary string) cacheDetails {
 	if entry.ID == "" {
-		return needsBuilding{hash: hash}
+		return needsBuilding{hash: hash, changeSummary: changeSummary}
 	}
 
 	// Check the imageID for the tag
@@ -117,10 +120,10 @@ func (c *cache) lookupLocal(ctx context.Context, hash, tag string, entry ImageDe
 		return needsLocalTagging{hash: hash, tag: tag, imageID: entry.ID}
 	}
 
-	return needsBuilding{hash: hash}
+	return needsBuilding{hash: hash, changeSummary: changeSummary}
 }
 
-func (c *cache) lookupRemote(ctx context.Context, hash, tag string, platforms []specs.Platform, entry ImageDetails) cacheDetails {
+func (c *cache) lookupRemote(ctx context.Context, hash, tag string, platforms []specs.Platform, entry ImageDetails, changeSummary string) cacheDetails {
 	if remoteDigest, err := docker.RemoteDigest(tag, c.cfg, nil); err == nil {
 		// Image exists remotely with the same tag and digest
 		if remoteDigest == entry.Digest {
@@ -141,7 +144,7 @@ func (c *cache) lookupRemote(ctx context.Context, hash, tag string, platforms []
 		return needsPushing{hash: hash, tag: tag, imageID: entry.ID}
 	}
 
-	return needsBuilding{hash: hash}
+	return needsBuilding{hash: hash, changeSummary: changeSummary}
 }
 
 func (c *cache) tryImport(ctx context.Context, a *latest.Artifact, tag string, hash string, pl v1.Platform) (ImageDetails, error) {

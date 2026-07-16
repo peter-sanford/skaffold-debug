@@ -42,6 +42,10 @@ func (d failed) Hash() string {
 // Not found, needs building
 type needsBuilding struct {
 	hash string
+	// changeSummary is a compact, human-readable note on which cache-hash inputs changed since
+	// the last recorded run (see cachedebug.go); "" if unknown (e.g. first run ever, or the
+	// artifact never had a previous snapshot to diff against).
+	changeSummary string
 }
 
 func (d needsBuilding) Hash() string {

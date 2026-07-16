@@ -76,7 +76,13 @@ func (c *cache) Build(ctx context.Context, out io.Writer, tags tag.ImageTags, ar
 
 		case needsBuilding:
 			eventV2.CacheCheckMiss(artifact.ImageName, platforms.GetPlatforms(artifact.ImageName).String())
-			output.Yellow.Fprintln(out, "Not found. Building")
+			// CACHEDEBUG: print on stdout (not stderr) so it's visible even with stderr
+			// redirected to /dev/null; see cachedebug.go for how changeSummary is computed.
+			if result.changeSummary != "" {
+				output.Yellow.Fprintf(out, "Not found. Building (changes: %s)\n", result.changeSummary)
+			} else {
+				output.Yellow.Fprintln(out, "Not found. Building")
+			}
 			c.hashByName[artifact.ImageName] = result.Hash()
 			needToBuild = append(needToBuild, artifact)
 			continue

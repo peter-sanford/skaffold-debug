@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/mitchellh/go-homedir"
 
@@ -58,10 +59,29 @@ func cacheDepsDir() string {
 	return "cache-deps"
 }
 
+// changeSummaries holds the most recent cache-deps change summary per artifact, written here
+// (during hash computation, in singleArtifactHash via dumpCacheDeps) and consumed once from
+// lookup.go right after the hash is known, so it can ride along on the needsBuilding result and
+// get printed on stdout next to "Not found. Building" instead of going to stderr — visible even
+// when stderr is redirected to /dev/null.
+var changeSummaries sync.Map // map[string]string, image name -> change summary
+
+// takeCacheDepsChangeSummary returns and clears the change summary recorded for imageName, if
+// any. "Take" (get-and-delete) rather than "get" so a stale summary can't leak into a later,
+// unrelated cache lookup for the same artifact within a long-running `skaffold dev` loop.
+func takeCacheDepsChangeSummary(imageName string) string {
+	v, ok := changeSummaries.LoadAndDelete(imageName)
+	if !ok {
+		return ""
+	}
+	return v.(string)
+}
+
 // dumpCacheDeps snapshots the current set of hash inputs for an artifact to
-// <cacheDepsDir>/<artifact>.txt, diffs it against the previous snapshot (if any), and reports
-// any differences to stderr as CACHEDEBUG lines. Side-effecting only; nothing here participates
-// in the actual hash computation.
+// <cacheDepsDir>/<artifact>.txt and diffs it against the previous snapshot (if any). Side-effecting
+// only; nothing here participates in the actual hash computation. Errors here (e.g. can't create
+// the snapshot dir) are reported to stderr since they're about the debug tooling itself, not
+// about why the cache missed.
 func dumpCacheDeps(imageName string, current map[string]string) {
 	dir := cacheDepsDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -76,7 +96,9 @@ func dumpCacheDeps(imageName string, current map[string]string) {
 		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s: could not read previous snapshot %s: %v\n", imageName, path, err)
 	}
 
-	reportCacheDepsDiff(imageName, previous, current)
+	if summary := buildCacheDepsChangeSummary(previous, current); summary != "" {
+		changeSummaries.Store(imageName, summary)
+	}
 
 	if err := writeCacheDeps(path, current); err != nil {
 		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s: could not write snapshot %s: %v\n", imageName, path, err)
@@ -130,12 +152,18 @@ func writeCacheDeps(path string, current map[string]string) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-// reportCacheDepsDiff prints which entries were added, removed, or changed since the previous
-// snapshot. Nothing is printed if there's no previous snapshot to compare against, or if
-// nothing changed (the common case: this is what keeps normal cache hits quiet).
-func reportCacheDepsDiff(imageName string, previous, current map[string]string) {
+// maxChangeSummaryEntries caps how many changed/added/removed entries get named inline before
+// falling back to "and N more" — keeps the summary on one line even for a sweeping change.
+const maxChangeSummaryEntries = 6
+
+// buildCacheDepsChangeSummary returns a compact, single-line, comma-separated summary of what
+// changed since the previous snapshot (e.g. "~app.py, +new.txt, -old.txt"), or "" if there's no
+// previous snapshot to compare against, or nothing changed (the common case: this is what keeps
+// normal cache hits quiet). It's meant to be printed on stdout right after "Not found.
+// Building" — see lookup.go/retrieve.go — so it's visible even with stderr redirected away.
+func buildCacheDepsChangeSummary(previous, current map[string]string) string {
 	if previous == nil {
-		return
+		return ""
 	}
 
 	var added, removed, changed []string
@@ -155,62 +183,34 @@ func reportCacheDepsDiff(imageName string, previous, current map[string]string) 
 	}
 
 	if len(added) == 0 && len(removed) == 0 && len(changed) == 0 {
-		return
+		return ""
 	}
 
+	sort.Strings(changed)
 	sort.Strings(added)
 	sort.Strings(removed)
-	sort.Strings(changed)
 
-	// Use a distinct tag from the raw per-dependency CACHEDEBUG lines so this summary is easy
-	// to pick out on its own, e.g. `grep 'CACHEDEBUG-DIFF'`.
-	tag := "CACHEDEBUG-DIFF"
-
-	fmt.Fprintf(os.Stderr, "%s %s: %s\n", tag, imageName, summarizeCounts(len(changed), len(added), len(removed)))
-
-	// Column-align the symbol/path so a run with a mix of changed/added/removed reads as a
-	// table instead of three differently-shaped sentences.
-	maxPathLen := 0
-	for _, p := range append(append(append([]string{}, changed...), added...), removed...) {
-		if l := len(displayKey(p)); l > maxPathLen {
-			maxPathLen = l
-		}
-	}
-
+	var entries []string
 	for _, p := range changed {
-		fmt.Fprintf(os.Stderr, "%s %s:   ~ %-*s  %s -> %s\n", tag, imageName, maxPathLen, displayKey(p),
-			truncateForDisplay(previous[p], 12), truncateForDisplay(current[p], 12))
+		entries = append(entries, "~"+displayKey(p))
 	}
 	for _, p := range added {
-		fmt.Fprintf(os.Stderr, "%s %s:   + %s\n", tag, imageName, displayKey(p))
+		entries = append(entries, "+"+displayKey(p))
 	}
 	for _, p := range removed {
-		fmt.Fprintf(os.Stderr, "%s %s:   - %s\n", tag, imageName, displayKey(p))
+		entries = append(entries, "-"+displayKey(p))
 	}
+
+	if len(entries) > maxChangeSummaryEntries {
+		omitted := len(entries) - maxChangeSummaryEntries
+		entries = entries[:maxChangeSummaryEntries]
+		entries = append(entries, fmt.Sprintf("and %d more", omitted))
+	}
+
+	return strings.Join(entries, ", ")
 }
 
-// summarizeCounts renders a one-line, pluralization-aware summary like
-// "2 cache inputs changed since last run (2 changed, 1 added, 0 removed)".
-func summarizeCounts(changed, added, removed int) string {
-	total := changed + added + removed
-	noun := "input"
-	if total != 1 {
-		noun = "inputs"
-	}
-	return fmt.Sprintf("%d cache %s changed since last run (%d changed, %d added, %d removed)",
-		total, noun, changed, added, removed)
-}
-
-// truncateForDisplay shortens long values (e.g. a full artifact config JSON blob) so a changed
-// line stays a single skimmable line instead of dumping the whole value.
-func truncateForDisplay(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
-}
-
-// displayKey strips the metadata marker off non-file keys so the report reads naturally,
+// displayKey strips the metadata marker off non-file keys so the summary reads naturally,
 // e.g. "!meta! config" -> "config".
 func displayKey(key string) string {
 	return strings.TrimPrefix(key, metaKeyPrefix)
