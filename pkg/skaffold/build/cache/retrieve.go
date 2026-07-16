@@ -78,10 +78,11 @@ func (c *cache) Build(ctx context.Context, out io.Writer, tags tag.ImageTags, ar
 			eventV2.CacheCheckMiss(artifact.ImageName, platforms.GetPlatforms(artifact.ImageName).String())
 			// CACHEDEBUG: print on stdout (not stderr) so it's visible even with stderr
 			// redirected to /dev/null; see cachedebug.go for how changeSummary is computed.
+			// changeSummary (if non-empty) is a pre-formatted, indented, multi-line block
+			// ending in its own trailing newline, so it's printed as-is right after this line.
+			output.Yellow.Fprintln(out, "Not found. Building")
 			if result.changeSummary != "" {
-				output.Yellow.Fprintf(out, "Not found. Building (changes: %s)\n", result.changeSummary)
-			} else {
-				output.Yellow.Fprintln(out, "Not found. Building")
+				fmt.Fprint(out, result.changeSummary)
 			}
 			c.hashByName[artifact.ImageName] = result.Hash()
 			needToBuild = append(needToBuild, artifact)

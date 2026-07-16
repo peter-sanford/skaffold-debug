@@ -173,15 +173,26 @@ func writeCacheDeps(path string, current map[string]string) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-// maxChangeSummaryEntries caps how many changed/added/removed entries get named inline before
-// falling back to "and N more" — keeps the summary on one line even for a sweeping change.
-const maxChangeSummaryEntries = 6
+// maxChangeSummaryEntries caps how many changed/added/removed entries get listed before falling
+// back to "(and N more)" — keeps the block from running away on a sweeping change (a shared
+// dependency like pyramid_shared touching a lot of artifacts at once, a full env rebuild, etc).
+const maxChangeSummaryEntries = 20
 
-// buildCacheDepsChangeSummary returns a compact, single-line, comma-separated summary of what
-// changed since the previous snapshot (e.g. "~app.py, +new.txt, -old.txt"), or "" if there's no
-// previous snapshot to compare against, or nothing changed (the common case: this is what keeps
-// normal cache hits quiet). It's meant to be printed on stdout right after "Not found.
-// Building" — see lookup.go/retrieve.go — so it's visible even with stderr redirected away.
+// changeSummaryIndent is the indentation for each entry line. Fixed rather than aligned to the
+// artifact name's own "<name>: " prefix (retrieve.go prints that part, and doesn't know it here).
+const changeSummaryIndent = "      "
+
+// buildCacheDepsChangeSummary returns a multi-line, indented block listing what changed since
+// the previous snapshot — one entry per line, e.g.:
+//
+//	    changes:
+//	      ~ app.py
+//	      + new.txt
+//	      - old.txt
+//
+// or "" if there's no previous snapshot to compare against, or nothing changed (the common case:
+// this is what keeps normal cache hits quiet). Meant to be printed on stdout right after "Not
+// found. Building" — see lookup.go/retrieve.go — so it's visible even with stderr redirected away.
 func buildCacheDepsChangeSummary(previous, current map[string]string) string {
 	if previous == nil {
 		return ""
@@ -213,22 +224,32 @@ func buildCacheDepsChangeSummary(previous, current map[string]string) string {
 
 	var entries []string
 	for _, p := range changed {
-		entries = append(entries, "~"+displayKey(p))
+		entries = append(entries, "~ "+displayKey(p))
 	}
 	for _, p := range added {
-		entries = append(entries, "+"+displayKey(p))
+		entries = append(entries, "+ "+displayKey(p))
 	}
 	for _, p := range removed {
-		entries = append(entries, "-"+displayKey(p))
+		entries = append(entries, "- "+displayKey(p))
 	}
 
+	omitted := 0
 	if len(entries) > maxChangeSummaryEntries {
-		omitted := len(entries) - maxChangeSummaryEntries
+		omitted = len(entries) - maxChangeSummaryEntries
 		entries = entries[:maxChangeSummaryEntries]
-		entries = append(entries, fmt.Sprintf("and %d more", omitted))
 	}
 
-	return strings.Join(entries, ", ")
+	var b strings.Builder
+	b.WriteString("    changes:\n")
+	for _, e := range entries {
+		b.WriteString(changeSummaryIndent)
+		b.WriteString(e)
+		b.WriteString("\n")
+	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "%s(and %d more)\n", changeSummaryIndent, omitted)
+	}
+	return b.String()
 }
 
 // displayKey strips the metadata marker off non-file keys so the summary reads naturally,
