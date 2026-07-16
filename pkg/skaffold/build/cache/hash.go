@@ -136,7 +136,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 		}
 		inputs = append(inputs, h)
 		depSnapshot[d] = h
-		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s dep %s -> %s\n", a.ImageName, d, h)
+		debugf("CACHEDEBUG %s dep %s -> %s\n", a.ImageName, d, h)
 	}
 
 	// add build args for the artifact if specified
@@ -147,7 +147,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 	if args != nil {
 		inputs = append(inputs, args...)
 		depSnapshot[metaKeyPrefix+"buildArgs"] = strings.Join(args, ",")
-		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s buildArgs -> %v\n", a.ImageName, args)
+		debugf("CACHEDEBUG %s buildArgs -> %v\n", a.ImageName, args)
 	}
 
 	// add build platforms
@@ -158,11 +158,11 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 	sort.Strings(ps)
 	inputs = append(inputs, ps...)
 	depSnapshot[metaKeyPrefix+"platforms"] = strings.Join(ps, ",")
-	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s config -> %s\n", a.ImageName, config)
-	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s platforms -> %v\n", a.ImageName, ps)
+	debugf("CACHEDEBUG %s config -> %s\n", a.ImageName, config)
+	debugf("CACHEDEBUG %s platforms -> %v\n", a.ImageName, ps)
 
 	finalHash, err := encode(inputs)
-	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s finalHash -> %s\n", a.ImageName, finalHash)
+	debugf("CACHEDEBUG %s finalHash -> %s\n", a.ImageName, finalHash)
 	dumpCacheDeps(a.ImageName, depSnapshot)
 	return finalHash, err
 }

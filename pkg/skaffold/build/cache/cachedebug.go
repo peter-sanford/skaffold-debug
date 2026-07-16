@@ -39,6 +39,27 @@ import (
 // a real dependency path starting with "!meta! " is unrealistic enough not to worry about.
 const metaKeyPrefix = "!meta! "
 
+// cacheDebugVerbose reports whether the raw, per-input CACHEDEBUG lines (one per dependency
+// file, plus buildArgs/config/platforms/finalHash) should print to stderr. Off by default —
+// there's one of these lines per dependency file per artifact per build, which is a lot of
+// noise for something you only want when actively digging into a specific cache miss. Enable
+// with SKAFFOLD_CACHEDEBUG=1 (or any non-empty value).
+//
+// This does NOT affect the cache-deps/ snapshot files or the stdout "(changes: ...)" summary —
+// those always run regardless, since they're what make a plain "Not found. Building" actionable
+// without turning on verbose logging first.
+func cacheDebugVerbose() bool {
+	return os.Getenv("SKAFFOLD_CACHEDEBUG") != ""
+}
+
+// debugf prints a CACHEDEBUG line to stderr, gated on cacheDebugVerbose().
+func debugf(format string, args ...any) {
+	if !cacheDebugVerbose() {
+		return
+	}
+	fmt.Fprintf(os.Stderr, format, args...)
+}
+
 // cacheDepsDir is where per-artifact dependency snapshots are written, one file per artifact.
 //
 // Defaults to <home>/.skaffold/cache-deps, next to skaffold's own cache file
