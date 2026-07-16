@@ -173,11 +173,6 @@ func writeCacheDeps(path string, current map[string]string) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-// maxChangeSummaryEntries caps how many changed/added/removed entries get listed before falling
-// back to "(and N more)" — keeps the block from running away on a sweeping change (a shared
-// dependency like pyramid_shared touching a lot of artifacts at once, a full env rebuild, etc).
-const maxChangeSummaryEntries = 20
-
 // changeSummaryIndent is the indentation for each entry line. Fixed rather than aligned to the
 // artifact name's own "<name>: " prefix (retrieve.go prints that part, and doesn't know it here).
 const changeSummaryIndent = "      "
@@ -233,21 +228,12 @@ func buildCacheDepsChangeSummary(previous, current map[string]string) string {
 		entries = append(entries, "- "+displayKey(p))
 	}
 
-	omitted := 0
-	if len(entries) > maxChangeSummaryEntries {
-		omitted = len(entries) - maxChangeSummaryEntries
-		entries = entries[:maxChangeSummaryEntries]
-	}
-
 	var b strings.Builder
 	b.WriteString("    changes:\n")
 	for _, e := range entries {
 		b.WriteString(changeSummaryIndent)
 		b.WriteString(e)
 		b.WriteString("\n")
-	}
-	if omitted > 0 {
-		fmt.Fprintf(&b, "%s(and %d more)\n", changeSummaryIndent, omitted)
 	}
 	return b.String()
 }
