@@ -29,13 +29,17 @@ This repo is a personal fork of [GoogleContainerTools/skaffold](https://github.c
   2. `pkg/skaffold/build/cache/cachedebug.go` snapshots those same inputs to
      `~/.skaffold/cache-deps/<artifact>.txt` on every run (tab-separated `key\tvalue` lines, one per
      dependency file plus a few `!meta! ...`-prefixed entries for config/build args/platforms), diffs the
-     snapshot against the previous run, and — if anything differs — prints exactly which file(s)
-     changed/were added/were removed as `CACHEDEBUG <artifact>: ...` lines, instead of just leaving
-     `Not found. Building` unexplained. Silent when nothing changed (normal cache hits stay quiet).
-     Override the snapshot directory with `SKAFFOLD_CACHE_DEBUG_DIR` — the default is deliberately
-     *not* relative to the working directory, since most artifacts' `dependencies.paths` include `.` or
-     the project root, and a snapshot file living inside that tree would count itself as a changed
-     dependency on every subsequent run.
+     snapshot against the previous run, and — if anything differs — annotates the normal
+     `Not found. Building` line **on stdout** with which file(s) changed/were added/were removed:
+     ```
+      - portal: Not found. Building (changes: ~app.py, +new-file.txt, -old-config.ini)
+     ```
+     Capped at 6 named entries (`+ N more` beyond that). Silent when nothing changed (normal cache
+     hits stay quiet), and printed on stdout specifically so it's visible even with stderr
+     redirected to `/dev/null`. Override the snapshot directory with `SKAFFOLD_CACHE_DEBUG_DIR` —
+     the default is deliberately *not* relative to the working directory, since most artifacts'
+     `dependencies.paths` include `.` or the project root, and a snapshot file living inside that
+     tree would count itself as a changed dependency on every subsequent run.
 
 ### Pulling in upstream changes
 
