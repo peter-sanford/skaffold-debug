@@ -162,20 +162,56 @@ func reportCacheDepsDiff(imageName string, previous, current map[string]string) 
 	sort.Strings(removed)
 	sort.Strings(changed)
 
-	fmt.Fprintf(os.Stderr, "CACHEDEBUG %s: cache inputs changed since last run:\n", imageName)
+	// Use a distinct tag from the raw per-dependency CACHEDEBUG lines so this summary is easy
+	// to pick out on its own, e.g. `grep 'CACHEDEBUG-DIFF'`.
+	tag := "CACHEDEBUG-DIFF"
+
+	fmt.Fprintf(os.Stderr, "%s %s: %s\n", tag, imageName, summarizeCounts(len(changed), len(added), len(removed)))
+
+	// Column-align the symbol/path so a run with a mix of changed/added/removed reads as a
+	// table instead of three differently-shaped sentences.
+	maxPathLen := 0
+	for _, p := range append(append(append([]string{}, changed...), added...), removed...) {
+		if l := len(displayKey(p)); l > maxPathLen {
+			maxPathLen = l
+		}
+	}
+
 	for _, p := range changed {
-		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s:   ~ changed: %s (%s -> %s)\n", imageName, displayKey(p), previous[p], current[p])
+		fmt.Fprintf(os.Stderr, "%s %s:   ~ %-*s  %s -> %s\n", tag, imageName, maxPathLen, displayKey(p),
+			truncateForDisplay(previous[p], 12), truncateForDisplay(current[p], 12))
 	}
 	for _, p := range added {
-		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s:   + added: %s\n", imageName, displayKey(p))
+		fmt.Fprintf(os.Stderr, "%s %s:   + %s\n", tag, imageName, displayKey(p))
 	}
 	for _, p := range removed {
-		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s:   - removed: %s\n", imageName, displayKey(p))
+		fmt.Fprintf(os.Stderr, "%s %s:   - %s\n", tag, imageName, displayKey(p))
 	}
 }
 
+// summarizeCounts renders a one-line, pluralization-aware summary like
+// "2 cache inputs changed since last run (2 changed, 1 added, 0 removed)".
+func summarizeCounts(changed, added, removed int) string {
+	total := changed + added + removed
+	noun := "input"
+	if total != 1 {
+		noun = "inputs"
+	}
+	return fmt.Sprintf("%d cache %s changed since last run (%d changed, %d added, %d removed)",
+		total, noun, changed, added, removed)
+}
+
+// truncateForDisplay shortens long values (e.g. a full artifact config JSON blob) so a changed
+// line stays a single skimmable line instead of dumping the whole value.
+func truncateForDisplay(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
 // displayKey strips the metadata marker off non-file keys so the report reads naturally,
-// e.g. "\x00 config" -> "config".
+// e.g. "!meta! config" -> "config".
 func displayKey(key string) string {
 	return strings.TrimPrefix(key, metaKeyPrefix)
 }
