@@ -43,7 +43,21 @@ This repo is a personal fork of [GoogleContainerTools/skaffold](https://github.c
      Silent when nothing changed (normal cache hits stay quiet), and printed on stdout
      specifically so it's visible even with stderr redirected to `/dev/null`. **Always on**,
      unlike the raw `CACHEDEBUG` lines above — this is what makes a plain build actionable
-     without turning on verbose logging first. Override the snapshot directory with
+     without turning on verbose logging first.
+
+     If it's `Not found. Building` with *no* `changes:` block, that doesn't mean nothing
+     changed — it means none of *this artifact's own* tracked inputs changed, and one of three
+     things is going on instead (a one-line `note:` explains which):
+     - **first tracked run** for this artifact — no previous snapshot to diff against yet
+     - **a required/dependent artifact changed** — the combined hash used for the cache lookup
+       folds in every artifact this one `requires:`, but cache-deps only snapshots this
+       artifact's own direct inputs, so a change purely in a required artifact shows up as a
+       miss here with nothing to point at
+     - **the previously-built image is gone** — the hash matched a real prior entry in
+       `~/.skaffold/cache`, but that image no longer resolves locally or remotely (pruned,
+       evicted, `docker system prune`, etc.) — rebuilding just recreates it, nothing to fix
+
+     Override the snapshot directory with
      `SKAFFOLD_CACHE_DEBUG_DIR` — the default is deliberately *not*
      relative to the working directory, since most artifacts' `dependencies.paths` include `.` or
      the project root, and a snapshot file living inside that tree would count itself as a
