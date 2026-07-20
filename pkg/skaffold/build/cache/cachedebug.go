@@ -80,22 +80,62 @@ func cacheDepsDir() string {
 	return "cache-deps"
 }
 
-// changeSummaries holds the most recent cache-deps change summary per artifact, written here
-// (during hash computation, in singleArtifactHash via dumpCacheDeps) and consumed once from
-// lookup.go right after the hash is known, so it can ride along on the needsBuilding result and
-// get printed on stdout next to "Not found. Building" instead of going to stderr — visible even
-// when stderr is redirected to /dev/null.
-var changeSummaries sync.Map // map[string]string, image name -> change summary
+// cacheDiagnostics bundles what dumpCacheDeps figured out about an artifact's inputs this run,
+// for lookup.go to consume once the hash is known (see takeCacheDiagnostics).
+type cacheDiagnostics struct {
+	// changeSummary is the pre-formatted, indented, multi-line "changes:" block (see
+	// buildCacheDepsChangeSummary), or "" if nothing in the tracked inputs differs from the
+	// previous snapshot.
+	changeSummary string
+	// hadPreviousSnapshot is false when there was no previous snapshot to diff against at all
+	// (first tracked run for this artifact, or the cache-deps/ file was deleted/cleared) — as
+	// opposed to there being a previous snapshot that simply matches this run's.
+	hadPreviousSnapshot bool
+}
 
-// takeCacheDepsChangeSummary returns and clears the change summary recorded for imageName, if
-// any. "Take" (get-and-delete) rather than "get" so a stale summary can't leak into a later,
+// changeDiagnostics holds the most recent cacheDiagnostics per artifact, written here (during
+// hash computation, in singleArtifactHash via dumpCacheDeps) and consumed once from lookup.go
+// right after the hash is known, so a needsBuilding result can be annotated with either what
+// changed, or — if nothing in this artifact's own tracked inputs changed — why it's rebuilding
+// anyway. Printed on stdout instead of stderr so it's visible even when stderr is redirected to
+// /dev/null.
+var changeDiagnostics sync.Map // map[string]cacheDiagnostics, image name -> diagnostics
+
+// takeCacheDiagnostics returns and clears the diagnostics recorded for imageName, if any.
+// "Take" (get-and-delete) rather than "get" so stale diagnostics can't leak into a later,
 // unrelated cache lookup for the same artifact within a long-running `skaffold dev` loop.
-func takeCacheDepsChangeSummary(imageName string) string {
-	v, ok := changeSummaries.LoadAndDelete(imageName)
+func takeCacheDiagnostics(imageName string) cacheDiagnostics {
+	v, ok := changeDiagnostics.LoadAndDelete(imageName)
 	if !ok {
-		return ""
+		// No cacheDiagnostics recorded at all (e.g. dumpCacheDeps bailed early on an error
+		// creating the snapshot dir) — treat like "no previous snapshot" rather than claiming
+		// to know anything about whether the inputs changed.
+		return cacheDiagnostics{}
 	}
-	return v.(string)
+	return v.(cacheDiagnostics)
+}
+
+// noChangeReason explains, in the same indented block style as the "changes:" list, why a
+// needsBuilding result has no changeSummary to show — i.e. why this artifact's own tracked
+// inputs are identical to last run, yet the cache still missed. entry is whatever ImageDetails
+// was already looked up for this hash at the needsBuilding call site: its zero-ness tells us
+// whether this exact combined hash was ever recorded in ~/.skaffold/cache before, which is the
+// same signal callers already have on hand — see lookup.go.
+func noChangeReason(diag cacheDiagnostics, entry ImageDetails) string {
+	if diag.changeSummary != "" {
+		return diag.changeSummary
+	}
+	switch {
+	case !diag.hadPreviousSnapshot:
+		return "    note: no previous snapshot for this artifact yet (first tracked run)\n"
+	case entry.ID == "" && entry.Digest == "":
+		return "    note: none of this artifact's own tracked inputs changed — likely rebuilding" +
+			" because a required/dependent artifact changed (its hash isn't tracked here; see" +
+			" the artifact's `requires:` list)\n"
+	default:
+		return "    note: matched a previous build's hash, but that image no longer exists" +
+			" locally/remotely (likely pruned or evicted) — rebuilding to recreate it\n"
+	}
 }
 
 // dumpCacheDeps snapshots the current set of hash inputs for an artifact to
@@ -117,9 +157,10 @@ func dumpCacheDeps(imageName string, current map[string]string) {
 		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s: could not read previous snapshot %s: %v\n", imageName, path, err)
 	}
 
-	if summary := buildCacheDepsChangeSummary(previous, current); summary != "" {
-		changeSummaries.Store(imageName, summary)
-	}
+	changeDiagnostics.Store(imageName, cacheDiagnostics{
+		changeSummary:       buildCacheDepsChangeSummary(previous, current),
+		hadPreviousSnapshot: previous != nil,
+	})
 
 	if err := writeCacheDeps(path, current); err != nil {
 		fmt.Fprintf(os.Stderr, "CACHEDEBUG %s: could not write snapshot %s: %v\n", imageName, path, err)

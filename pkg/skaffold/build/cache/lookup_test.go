@@ -37,6 +37,12 @@ import (
 	"github.com/GoogleContainerTools/skaffold/v2/testutil"
 )
 
+// CACHEDEBUG: every lookupLocal/lookupRemote test case below drives lookup() via a mockHasher
+// that returns a canned hash directly, never going through singleArtifactHash/dumpCacheDeps. So
+// takeCacheDiagnostics always comes back the zero value here, and noChangeReason always takes
+// its "no previous snapshot" branch — regardless of what's in each test's fake artifactCache.
+var noSnapshotNote = noChangeReason(cacheDiagnostics{}, ImageDetails{})
+
 func TestLookupLocal(t *testing.T) {
 	tests := []struct {
 		description string
@@ -50,7 +56,7 @@ func TestLookupLocal(t *testing.T) {
 			hasher:      mockHasher{"thehash"},
 			api:         &testutil.FakeAPIClient{},
 			cache:       map[string]ImageDetails{},
-			expected:    needsBuilding{hash: "thehash"},
+			expected:    needsBuilding{hash: "thehash", changeSummary: noSnapshotNote},
 		},
 		{
 			description: "hash failure",
@@ -63,7 +69,7 @@ func TestLookupLocal(t *testing.T) {
 			cache: map[string]ImageDetails{
 				"hash": {Digest: "ignored"},
 			},
-			expected: needsBuilding{hash: "hash"},
+			expected: needsBuilding{hash: "hash", changeSummary: noSnapshotNote},
 		},
 		{
 			description: "hit but not found",
@@ -72,7 +78,7 @@ func TestLookupLocal(t *testing.T) {
 				"hash": {ID: "imageID"},
 			},
 			api:      &testutil.FakeAPIClient{},
-			expected: needsBuilding{hash: "hash"},
+			expected: needsBuilding{hash: "hash", changeSummary: noSnapshotNote},
 		},
 		{
 			description: "hit but not found with error",
@@ -115,7 +121,7 @@ func TestLookupLocal(t *testing.T) {
 				"hash": {ID: "imageID"},
 			},
 			api:      (&testutil.FakeAPIClient{}).Add("tag", "otherImageID"),
-			expected: needsBuilding{hash: "hash"},
+			expected: needsBuilding{hash: "hash", changeSummary: noSnapshotNote},
 		},
 	}
 	for _, test := range tests {
@@ -154,7 +160,7 @@ func TestLookupRemote(t *testing.T) {
 			hasher:      mockHasher{"hash"},
 			api:         &testutil.FakeAPIClient{ErrImagePull: true},
 			cache:       map[string]ImageDetails{},
-			expected:    needsBuilding{hash: "hash"},
+			expected:    needsBuilding{hash: "hash", changeSummary: noSnapshotNote},
 		},
 		{
 			description: "hash failure",
@@ -193,7 +199,7 @@ func TestLookupRemote(t *testing.T) {
 				"hash": {ID: "imageID"},
 			},
 			api:      &testutil.FakeAPIClient{},
-			expected: needsBuilding{hash: "hash"},
+			expected: needsBuilding{hash: "hash", changeSummary: noSnapshotNote},
 		},
 	}
 	for _, test := range tests {
