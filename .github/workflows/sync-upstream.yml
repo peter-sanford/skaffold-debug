@@ -1,0 +1,83 @@
+name: Sync upstream and rebase cachedebug
+
+# CACHEDEBUG: local patch-maintenance workflow, not upstream Skaffold's own CI.
+#
+# Keeps `main` a byte-for-byte mirror of GoogleContainerTools/skaffold's main
+# (fast-forward only — if that ever fails, main has diverged and needs a human),
+# then rebases `cachedebug` on top and pushes it, force-with-lease.
+#
+# This file must live on the repo's default branch for the `schedule` trigger to
+# fire at all — that's why `cachedebug` (not `main`) is set as the default branch.
+# Keeping this workflow off `main` is deliberate: main must never carry a commit
+# upstream doesn't have, or `merge --ff-only` below starts failing permanently.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # every Monday, 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history, all branches)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/GoogleContainerTools/skaffold.git
+          git fetch upstream main
+
+      - name: Fast-forward main from upstream
+        run: |
+          set -euo pipefail
+          git checkout main
+          if ! git merge --ff-only upstream/main; then
+            echo "::error::main has diverged from upstream and can no longer fast-forward. main is supposed to stay a pure mirror with zero local commits — investigate manually (someone/something committed to main directly)."
+            exit 1
+          fi
+
+      - name: Push main
+        run: git push origin main
+
+      - name: Rebase cachedebug onto the updated main
+        run: |
+          set -euo pipefail
+          git fetch origin cachedebug
+          git checkout -B cachedebug origin/cachedebug
+          if ! git rebase main; then
+            git rebase --abort
+            echo "::error::Rebasing cachedebug onto the updated main hit a conflict — likely upstream touched pkg/skaffold/build/cache/hash.go. Resolve manually: git fetch upstream && git checkout cachedebug && git rebase main"
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Sanity-build the patched cache package
+        run: |
+          set -euo pipefail
+          go build -mod=vendor ./pkg/skaffold/build/cache/...
+          go test -mod=vendor ./pkg/skaffold/build/cache/...
+
+      - name: Push rebased cachedebug
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin cachedebug
