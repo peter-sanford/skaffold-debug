@@ -54,6 +54,10 @@ const (
 	// rebuildImageMissing means the current hash does have a cache entry, but the image it
 	// refers to can no longer be found locally or remotely, typically because it was pruned.
 	rebuildImageMissing
+	// rebuildInputsChanged means the inputs feeding the artifact's hash were recorded on a
+	// previous run and differ from this one. Only ever set when --debug-cache is in use;
+	// the changes themselves are carried alongside it.
+	rebuildInputsChanged
 )
 
 // description returns the explanation appended to "Not found. Building", or "" for
@@ -64,6 +68,8 @@ func (r rebuildReason) description() string {
 		return "no cached build for the current inputs"
 	case rebuildImageMissing:
 		return "cached image is no longer available"
+	case rebuildInputsChanged:
+		return "inputs changed"
 	default:
 		return ""
 	}
@@ -73,6 +79,9 @@ func (r rebuildReason) description() string {
 type needsBuilding struct {
 	hash   string
 	reason rebuildReason
+	// changes lists the inputs that differ from the previous run, one per line, and is only
+	// populated for rebuildInputsChanged.
+	changes []string
 }
 
 func (d needsBuilding) Hash() string {

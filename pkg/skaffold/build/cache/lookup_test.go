@@ -186,7 +186,9 @@ func TestLookupLocal(t *testing.T) {
 				cfg:                &mockConfig{mode: config.RunModes.Build},
 			}
 
-			t.Override(&newArtifactHasherFunc, func(_ graph.ArtifactGraph, _ DependencyLister, _ config.RunMode) artifactHasher { return test.hasher })
+			t.Override(&newArtifactHasherFunc, func(_ graph.ArtifactGraph, _ DependencyLister, _ config.RunMode, _ *inputRecorder) artifactHasher {
+				return test.hasher
+			})
 			details := cache.lookupArtifacts(context.Background(), io.Discard, map[string]string{"artifact": "tag"}, platform.Resolver{}, []*latest.Artifact{{
 				ImageName: "artifact",
 			}})
@@ -274,7 +276,9 @@ func TestLookupRemote(t *testing.T) {
 				client:             fakeLocalDaemon(test.api),
 				cfg:                &mockConfig{mode: config.RunModes.Build},
 			}
-			t.Override(&newArtifactHasherFunc, func(_ graph.ArtifactGraph, _ DependencyLister, _ config.RunMode) artifactHasher { return test.hasher })
+			t.Override(&newArtifactHasherFunc, func(_ graph.ArtifactGraph, _ DependencyLister, _ config.RunMode, _ *inputRecorder) artifactHasher {
+				return test.hasher
+			})
 			details := cache.lookupArtifacts(context.Background(), io.Discard, map[string]string{"artifact": "tag"}, platform.Resolver{}, []*latest.Artifact{{
 				ImageName: "artifact",
 			}})

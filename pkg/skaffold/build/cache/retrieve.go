@@ -81,6 +81,9 @@ func (c *cache) Build(ctx context.Context, out io.Writer, tags tag.ImageTags, ar
 			} else {
 				output.Yellow.Fprintln(out, "Not found. Building")
 			}
+			for _, change := range result.changes {
+				output.Default.Fprintf(out, "     %s\n", change)
+			}
 			c.hashByName[artifact.ImageName] = result.Hash()
 			needToBuild = append(needToBuild, artifact)
 			continue
