@@ -177,6 +177,25 @@ func digestOf(value string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// inputKey is the key a dependency is recorded under: its path relative to the artifact's
+// workspace where that is possible. Dependency paths reach us however the builder resolved
+// them, which for some configurations is absolute. Recording them as given would make the
+// same file, in two checkouts of the same repository, compare as one path added and another
+// removed -- burying the change the user is actually looking for. Relative keys also read
+// better in the output.
+func inputKey(workspace, dep string) string {
+	if workspace == "" {
+		return dep
+	}
+	rel, err := filepath.Rel(workspace, dep)
+	if err != nil {
+		// Mixing an absolute workspace with a relative dependency, or vice versa; there is
+		// nothing sensible to relativise against, so record the path as given.
+		return dep
+	}
+	return filepath.ToSlash(rel)
+}
+
 // displayInput strips the marker from a non-file input so that it reads naturally,
 // e.g. "!config" becomes "config".
 func displayInput(key string) string {

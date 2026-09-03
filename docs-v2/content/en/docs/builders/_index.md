@@ -70,8 +70,10 @@ Checking cache...
      - src/old_handler.go
 ```
 
-`~` marks a changed input, `+` an added one and `-` a removed one. Alongside
-dependency files, the artifact's `config`, `build args` and `platforms` can
+`~` marks a changed input, `+` an added one and `-` a removed one. Dependency
+files are listed relative to the artifact's context, so the same project built
+from two different checkouts compares equal instead of reporting every file as
+moved. Alongside them, the artifact's `config`, `build args` and `platforms` can
 appear in this list. The first run with `--debug-cache` has nothing to compare
 against, so it reports the ordinary reason instead.
 

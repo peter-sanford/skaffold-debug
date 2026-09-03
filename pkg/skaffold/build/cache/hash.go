@@ -146,7 +146,7 @@ func singleArtifactHash(ctx context.Context, out io.Writer, depLister Dependency
 		}
 		inputs = append(inputs, h)
 		if hashInputs != nil {
-			hashInputs[d] = h
+			hashInputs[inputKey(a.Workspace, d)] = h
 		}
 	}
 

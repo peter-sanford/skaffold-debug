@@ -80,6 +80,57 @@ func TestDiffInputs(t *testing.T) {
 	}
 }
 
+func TestInputKey(t *testing.T) {
+	tests := []struct {
+		description string
+		workspace   string
+		dep         string
+		expected    string
+	}{
+		{
+			description: "absolute dependency under an absolute workspace",
+			workspace:   "/home/user/repo/app",
+			dep:         "/home/user/repo/app/src/main.go",
+			expected:    "src/main.go",
+		},
+		{
+			description: "the same file in another checkout gives the same key",
+			workspace:   "/home/user/other-checkout/app",
+			dep:         "/home/user/other-checkout/app/src/main.go",
+			expected:    "src/main.go",
+		},
+		{
+			description: "dependency outside the workspace stays relative to it",
+			workspace:   "/home/user/repo/app",
+			dep:         "/home/user/repo/shared/lib.go",
+			expected:    "../shared/lib.go",
+		},
+		{
+			description: "relative workspace and dependency",
+			workspace:   ".",
+			dep:         "main.go",
+			expected:    "main.go",
+		},
+		{
+			description: "no workspace to relativise against",
+			workspace:   "",
+			dep:         "/home/user/repo/app/main.go",
+			expected:    "/home/user/repo/app/main.go",
+		},
+		{
+			description: "mixed absolute workspace and relative dependency is left alone",
+			workspace:   "/home/user/repo/app",
+			dep:         "main.go",
+			expected:    "main.go",
+		},
+	}
+	for _, test := range tests {
+		testutil.Run(t, test.description, func(t *testutil.T) {
+			t.CheckDeepEqual(test.expected, inputKey(test.workspace, test.dep))
+		})
+	}
+}
+
 func TestInputChangesLines(t *testing.T) {
 	testutil.Run(t, "modified, then added, then removed", func(t *testutil.T) {
 		changes := inputChanges{
